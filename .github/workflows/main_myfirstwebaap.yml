@@ -1,29 +1,86 @@
-name: Deploy static site to Azure Web App - MyFirstWebAap
+name: Deploy E-Commerce App to Azure Web App
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: ecommerce-app-demo
+  AZURE_RESOURCE_GROUP: ecommerce-rg
+  AZURE_PLAN_NAME: ecommerce-plan
+  LOCATION: eastus
+  RUNTIME: "NODE|18-lts"
 
 jobs:
-  deploy:
-    runs-on: windows-latest
-
+  build-and-deploy:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Login to Azure
+      - name: Log in to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_A2A9A01060674AFF8E5BC2143E1FA417 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_2B30A60715894D03B4DE437BBDED144B }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_D20DF43FA7B142C8AAC69217A8B98B43 }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure Web App
+      - name: Create Resource Group
+        run: |
+          az group create --name $AZURE_RESOURCE_GROUP --location $LOCATION
+
+      - name: Create App Service Plan
+        run: |
+          az appservice plan create \
+            --name $AZURE_PLAN_NAME \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --sku B1 --is-linux
+
+      - name: Create Web App
+        run: |
+          az webapp create \
+            --name $AZURE_WEBAPP_NAME \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --plan $AZURE_PLAN_NAME \
+            --runtime "$RUNTIME"
+
+      - name: Create Staging Slot
+        run: |
+          az webapp deployment slot create \
+            --name $AZURE_WEBAPP_NAME \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --slot staging
+
+      - name: Configure Autoscaling
+        run: |
+          az monitor autoscale create \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --resource $AZURE_PLAN_NAME \
+            --resource-type Microsoft.Web/serverfarms \
+            --name ecommerce-autoscale \
+            --min-count 1 --max-count 3 --count 1
+
+          az monitor autoscale rule create \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --autoscale-name ecommerce-autoscale \
+            --condition "Percentage CPU > 70 avg 5m" \
+            --scale out 1
+
+          az monitor autoscale rule create \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --autoscale-name ecommerce-autoscale \
+            --condition "Percentage CPU < 30 avg 10m" \
+            --scale in 1
+
+      - name: Deploy to Production Slot
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'MyFirstWebAap'
-          slot-name: 'Production'
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: production
+          package: .
+
+      - name: Deploy to Staging Slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: staging
           package: .
