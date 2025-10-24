@@ -1,0 +1,45 @@
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+
+let db;
+
+export async function initDb() {
+  db = await open({
+    filename: "./ecommerce.db",
+    driver: sqlite3.Database,
+  });
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      price REAL,
+      image TEXT
+    );
+  `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS cart (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      productId INTEGER,
+      quantity INTEGER,
+      FOREIGN KEY (productId) REFERENCES products (id)
+    );
+  `);
+
+  // Seed sample data if products table empty
+  const count = await db.get("SELECT COUNT(*) as count FROM products");
+  if (count.count === 0) {
+    await db.run(`INSERT INTO products (name, price, image) VALUES
+      ('Laptop', 999.99, 'https://via.placeholder.com/150'),
+      ('Headphones', 199.99, 'https://via.placeholder.com/150'),
+      ('Smartphone', 699.99, 'https://via.placeholder.com/150')
+    `);
+    console.log("📦 Sample products added");
+  }
+}
+
+export async function getDb() {
+  if (!db) await initDb();
+  return db;
+}

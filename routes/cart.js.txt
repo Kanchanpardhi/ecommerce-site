@@ -1,0 +1,27 @@
+import express from "express";
+import { getDb } from "../db.js";
+
+const router = express.Router();
+
+// Get cart items
+router.get("/", async (req, res) => {
+  const db = await getDb();
+  const cart = await db.all(
+    `SELECT c.id, p.name, p.price, c.quantity
+     FROM cart c JOIN products p ON c.productId = p.id`
+  );
+  res.json(cart);
+});
+
+// Add to cart
+router.post("/", async (req, res) => {
+  const { productId, quantity } = req.body;
+  const db = await getDb();
+  await db.run(
+    "INSERT INTO cart (productId, quantity) VALUES (?, ?)",
+    [productId, quantity]
+  );
+  res.json({ message: "Item added to cart" });
+});
+
+export default router;
